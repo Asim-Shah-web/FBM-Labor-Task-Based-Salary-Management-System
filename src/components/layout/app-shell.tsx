@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BanknoteIcon, CalendarCheck, ClipboardList, HandCoins, LayoutDashboard, ListChecks,
-  LogOut, Menu, Settings, ShieldCheck, Users, Wallet, BarChart3, KeyRound, type LucideIcon,
+  LogOut, Menu, Users, Wallet, BarChart3, KeyRound, type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,8 +22,6 @@ const ICONS: Record<NavKey, LucideIcon> = {
   salary: Wallet,
   advances: BanknoteIcon,
   reports: BarChart3,
-  users: ShieldCheck,
-  settings: Settings,
 };
 
 export type ShellNavItem = { key: NavKey; label: string; href: string };

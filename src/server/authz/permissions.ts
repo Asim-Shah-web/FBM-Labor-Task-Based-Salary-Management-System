@@ -1,5 +1,6 @@
-// Single source of truth for permission codes and the default role map.
-// The seed script writes these into the roles / permissions tables.
+// Single source of truth for permission codes and the role map.
+// FBM has ONE role: the Manager is the administrator and runs the whole system.
+// Permissions are still checked server-side on every action so the model can grow later.
 
 export const PERMISSIONS = {
   "worker:read": "View workers",
@@ -8,9 +9,9 @@ export const PERMISSIONS = {
   "rate:change": "Change task rates",
   "attendance:read": "View attendance",
   "attendance:write": "Enter and correct attendance",
-  "work:read": "View daily work entries",
-  "work:write": "Enter, approve and void daily work entries",
-  "allowance:write": "Enter, approve and void daily allowances",
+  "work:read": "View daily work entries and tasks",
+  "work:write": "Enter, approve, correct and void daily work entries",
+  "allowance:write": "Enter, correct and void daily allowances",
   "settlement:read": "View salary settlements and balances",
   "settlement:create": "Post salary settlements",
   "settlement:reverse": "Reverse salary settlements",
@@ -21,38 +22,18 @@ export const PERMISSIONS = {
   "report:read": "View reports and dashboard",
   "report:export": "Export and print reports",
   "audit:read": "View audit log",
-  "user:manage": "Manage users and roles",
-  "settings:manage": "Manage system settings",
 } as const;
 
 export type PermissionCode = keyof typeof PERMISSIONS;
 export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as PermissionCode[];
 
-export const ROLE_NAMES = ["ADMIN", "MANAGER", "VIEWER"] as const;
+export const ROLE_NAMES = ["MANAGER"] as const;
 export type RoleName = (typeof ROLE_NAMES)[number];
 
-const MANAGER: PermissionCode[] = ALL_PERMISSIONS.filter(
-  (p) => p !== "user:manage" && p !== "settings:manage",
-);
-
-const VIEWER: PermissionCode[] = [
-  "worker:read",
-  "attendance:read",
-  "work:read",
-  "settlement:read",
-  "advance:read",
-  "report:read",
-  "report:export",
-];
-
 export const ROLE_PERMISSIONS: Record<RoleName, PermissionCode[]> = {
-  ADMIN: ALL_PERMISSIONS, // Admin = Manager + user/settings management
-  MANAGER,
-  VIEWER,
+  MANAGER: ALL_PERMISSIONS,
 };
 
 export const ROLE_DESCRIPTIONS: Record<RoleName, string> = {
-  ADMIN: "Full access including user and settings management",
-  MANAGER: "Runs daily operations: workers, work entry, attendance, salary, advances, reports",
-  VIEWER: "Read-only access to records and reports",
+  MANAGER: "Administrator. Runs the whole system: workers, work, attendance, salary, advances, reports",
 };

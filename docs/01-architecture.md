@@ -1,6 +1,6 @@
 # FBM Labor & Task-Based Salary System: Phase 1 Architecture
 
-Status: **approved; Phase 2 implemented** (see `README.md`).
+Status: **approved; Phases 2 and 3 implemented** (see `README.md`).
 Companion file: `prisma/schema.prisma`.
 
 ---
@@ -19,7 +19,7 @@ Phases 2 and 3 can proceed without these. Phase 4 cannot. Each question has my p
 | Q6 | **Does a worker need to be present (attendance) to have work entries?** | Data-entry validation. | No dependency. Attendance and production are fully independent (your rule 6). A UI hint may show "no attendance marked" but never blocks. |
 | Q7 | **Same task twice for one worker on one date.** | Uniqueness. | One active line per (worker, date, task). To change quantity, edit while DRAFT or void-and-replace once APPROVED. Quantity is the multiplier, so there is no need for two lines. |
 
-**Decisions confirmed so far:** Q1 resolved as above. Q2 to Q7 accepted at the proposed defaults. The Manager may reverse payments (with a reason; audited).
+**Decisions confirmed so far:** the system has ONE user, the Manager (administrator); no other roles. Q1 resolved as above. Q2 to Q7 accepted at the proposed defaults. The Manager may reverse payments (with a reason; audited).
 
 **Assumptions I'm making (tell me if any are wrong):**
 
@@ -344,27 +344,10 @@ Additional guard (also in the migration): triggers that reject UPDATE of `earnin
 - Security headers via `next.config` (CSP, HSTS, X-Frame-Options, Referrer-Policy). Server Actions' built-in Origin check supplies CSRF protection.
 
 ### 6.2 Authorization
-- Permissions are string codes: `worker:read`, `worker:write`, `task:write`, `rate:change`, `attendance:write`, `attendance:correct`, `work:enter`, `work:approve`, `work:void`, `allowance:write`, `allowance:approve`, `settlement:read`, `settlement:create`, `settlement:reverse`, `advance:read`, `advance:issue`, `advance:recover`, `advance:void`, `report:read`, `report:export`, `user:manage`, `settings:manage`, `audit:read`.
+- **FBM has a single role: MANAGER.** The manager is the administrator and the only user; there are no operator, viewer, or separate admin accounts.
+- Permissions are still string codes (`worker:write`, `work:write`, `settlement:create`, `rate:change`, ...) and the MANAGER role holds all of them. Keeping them means every action is explicitly checked server-side and the model can grow later (for example a read-only role) without rewrites.
 - `requirePermission(code)` (implemented in `src/server/authz/require.ts`) runs **inside every Server Action, Route Handler, and data-fetching function**. Middleware only does a cheap "is there a session?" redirect and is **not** treated as authorization.
-- UI hides actions the user can't perform (convenience only).
-
-| Permission area | Admin | Manager | Viewer |
-|---|:-:|:-:|:-:|
-| Workers: read / write | ✔ / ✔ | ✔ / ✔ | read |
-| Tasks & rate changes | ✔ | ✔ | read |
-| Attendance: enter / correct | ✔ | ✔ | – |
-| Work entry & allowances: enter, approve, void | ✔ | ✔ | – |
-| Settlement: preview / post / reverse | ✔ | ✔ | read |
-| Advances: issue / recover / void | ✔ | ✔ | read |
-| Reports: view / export | ✔ | ✔ | ✔ |
-| Audit log: read | ✔ | ✔ | – |
-| Users, roles, settings | ✔ | – | – |
-
-**Roles seeded in v1: ADMIN, MANAGER, VIEWER.** The Manager is the working role for all daily operations. Admin is a superset of Manager that additionally manages users and settings (one person may hold both roles). The `OPERATOR` role from the original spec is not seeded; because roles and permissions are data (not code), it can be added later without code changes.
-
-*Payment reversals by the Manager require a written reason and are fully audited. If you want reversals and rate changes restricted to Admin, it is a one-line change in the permission map.*
-
-Roles and permissions are seeded as system data; the `roles` / `permissions` tables allow later customization without code changes.
+- Payment reversals, rate changes, and voids require a written reason where applicable and are fully audited.
 
 ### 6.3 Audit coverage
 Login success/failure/lockout, password changes, user/role changes, worker create/edit/status, task create/edit and every rate change, attendance corrections, entry create/approve/void/replace, allowance changes, settlement post/reverse, advance issue/void/recovery, report exports. Each row stores actor, action, entity, before/after JSON, IP, and user-agent.
@@ -389,8 +372,8 @@ Login success/failure/lockout, password changes, user/role changes, worker creat
 | Phase | Scope | Exit criteria |
 |---|---|---|
 | **1. Architecture** (this doc) | Schema, services, auth design | You approve; Q1–Q7 answered |
-| **2. Setup** (in progress) | Next.js + TS + Tailwind + shadcn-style UI, Prisma + Postgres (Docker Compose), migrations incl. raw constraints, Auth.js login/logout/change-password, seed roles + users, responsive app shell (sidebar/drawer), audit service, money helpers, unit tests | Log in, role-gated shell, migrations apply on a clean DB |
-| **3. Core modules** | Workers, Tasks & rate history, Attendance (single + bulk), Work entry (bulk grid, draft/approve/void), Allowances | Per-day totals correct; rate change doesn't alter old entries (test) |
+| **2. Setup** (done) | Next.js + TS + Tailwind + shadcn-style UI, Prisma + Postgres (Docker Compose), migrations incl. raw constraints, Auth.js login/logout/change-password, seed roles + users, responsive app shell (sidebar/drawer), audit service, money helpers, unit tests | Log in, role-gated shell, migrations apply on a clean DB |
+| **3. Core modules** (done) | Workers, Tasks & rate history, Attendance (single + bulk), Work entry (bulk grid, draft/approve/void), Allowances | Per-day totals correct; rate change doesn't alter old entries (test) |
 | **4. Financial** | Earnings ledger, settlement preview/post/reverse, allocation engine, partial payments, advances, recovery | Spec example passes; concurrency test: two simultaneous settlements never over-settle; `reconcile()` shows zero drift |
 | **5. Reports** | Dashboard, 6 reports, filters, print, Excel/PDF | Earned vs cash separation verified with an Oct-earned/Nov-paid fixture |
 | **6. Security & testing** | Permission matrix tests, audit review, rate limiting, error boundaries, backup/restore drill | Every server action has an authz test; restore verified |
