@@ -2,18 +2,13 @@ import { requirePagePermission } from "@/server/authz/require";
 import { prisma } from "@/server/db/prisma";
 import { toDbDate, todayKarachi, formatDate } from "@/lib/dates";
 import { formatPKR, sum } from "@/server/money/decimal";
+import { companyTotals } from "@/server/services/balance.service";
+import { listPayments } from "@/server/services/settlement.service";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
-
-// Money cards are deliberately separate (never combined into one figure).
-// Cash paid / outstanding / advances become live in Phase 4; reports in Phase 5.
-const LATER_CARDS = [
-  { title: "Cash paid (this month)", note: "By payment date" },
-  { title: "Outstanding wages", note: "As of selected date" },
-  { title: "Unrecovered advances", note: "Issued minus recovered" },
-];
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ denied?: string }> }) {
   const user = await requirePagePermission("report:read");
@@ -21,7 +16,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const today = todayKarachi();
   const monthStart = `${today.slice(0, 7)}-01`;
 
-  const [activeWorkers, present, absent, onLeave, taskEarn, allowEarn] = await Promise.all([
+  const [totals, recent, activeWorkers, present, absent, onLeave, taskEarn, allowEarn] = await Promise.all([
+    companyTotals(monthStart, today),
+    listPayments({ take: 5 }),
     prisma.worker.count({ where: { status: "ACTIVE" } }),
     prisma.attendance.count({ where: { date: toDbDate(today), status: "PRESENT" } }),
     prisma.attendance.count({ where: { date: toDbDate(today), status: "ABSENT" } }),
@@ -60,14 +57,30 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        {LATER_CARDS.map((c) => (
-          <Card key={c.title}>
-            <CardHeader><CardTitle>{c.title}</CardTitle></CardHeader>
-            <CardContent><div className="text-2xl font-semibold text-muted-foreground">-</div><p className="text-xs text-muted-foreground">{c.note}. Available after Phase 4.</p></CardContent>
-          </Card>
-        ))}
+      <div>
+        <h2 className="mb-2 text-sm font-medium text-muted-foreground">Cash, balances and advances (kept separate on purpose)</h2>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Card><CardHeader><CardTitle>Cash paid this month</CardTitle></CardHeader><CardContent><div className="text-xl font-semibold">{formatPKR(totals.cashPaidThisMonth)}</div><p className="text-xs text-muted-foreground">By payment date, any work period</p></CardContent></Card>
+          <Card><CardHeader><CardTitle>Outstanding earned wages</CardTitle></CardHeader><CardContent><div className="text-xl font-semibold">{formatPKR(totals.outstanding)}</div><p className="text-xs text-muted-foreground">As of today, all workers</p></CardContent></Card>
+          <Card><CardHeader><CardTitle>Unrecovered advances</CardTitle></CardHeader><CardContent><div className="text-xl font-semibold">{formatPKR(totals.advanceUnrecovered)}</div><p className="text-xs text-muted-foreground">Not counted as wages</p></CardContent></Card>
+        </div>
       </div>
+
+      <Card>
+        <CardHeader><CardTitle>Recent salary settlements</CardTitle></CardHeader>
+        <CardContent>
+          {recent.length === 0 ? <p className="text-sm text-muted-foreground">No settlements yet.</p> : (
+            <ul className="divide-y text-sm">
+              {recent.map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-2 py-2">
+                  <Link href={`/salary/payments/${p.id}`} className="min-w-0 truncate text-primary hover:underline">{p.workerName} <span className="text-xs text-muted-foreground">{p.receiptNo}</span></Link>
+                  <span className={p.status === "REVERSED" ? "line-through text-muted-foreground" : "font-medium tabular-nums"}>{formatPKR(p.cash)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

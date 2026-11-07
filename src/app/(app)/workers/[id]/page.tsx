@@ -44,6 +44,7 @@ export default async function WorkerProfilePage({ params }: { params: Promise<{ 
         description={`${worker.code}${worker.department ? ` · ${worker.department}` : ""}${worker.jobRole ? ` · ${worker.jobRole}` : ""}`}
         actions={can(user, "worker:write") && (
           <>
+            {can(user, "settlement:create") && <Button asChild><Link href={`/salary/settle?worker=${id}`}>Settle salary</Link></Button>}
             <Button asChild variant="outline"><Link href={`/workers/${id}/edit`}><Pencil className="h-4 w-4" /> Edit</Link></Button>
             <WorkerStatusButton workerId={id} status={worker.status} />
           </>
@@ -52,9 +53,9 @@ export default async function WorkerProfilePage({ params }: { params: Promise<{ 
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat title="Total earned" value={formatPKR(data.totals.earned)} note="Approved task earnings + allowances" />
-        <Stat title="Settled (paid + recovered)" value={formatPKR(data.totals.settled)} note="Salary payments arrive in Phase 4" />
+        <Stat title="Settled (paid + recovered)" value={formatPKR(data.totals.settled)} note="Cash paid plus advance recovered" />
         <Stat title="Outstanding earned wages" value={formatPKR(data.totals.outstanding)} />
-        <Stat title="Unrecovered advance" value={formatPKR(data.totals.advanceUnrecovered)} note="Advances arrive in Phase 4" />
+        <Stat title="Unrecovered advance" value={formatPKR(data.totals.advanceUnrecovered)} note="Not counted as wages" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -107,6 +108,51 @@ export default async function WorkerProfilePage({ params }: { params: Promise<{ 
                     <td className="px-4 py-2 text-right">{e.quantity}{e.unit ? ` ${e.unit}` : ""}</td>
                     <td className="px-4 py-2 text-right">{formatPKR(e.rate)}</td><td className="px-4 py-2 text-right">{formatPKR(e.amount)}</td>
                     <td className="px-4 py-2 no-underline"><StatusBadge status={e.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Salary settlements (latest 20)</CardTitle></CardHeader>
+        <CardContent className="overflow-x-auto p-0 sm:p-0">
+          {data.payments.length === 0 ? <Empty text="No salary payments yet." /> : (
+            <table className="w-full min-w-[32rem] text-sm">
+              <thead className="border-y bg-muted/50 text-left"><tr>
+                <th className="px-4 py-2">Receipt</th><th className="px-4 py-2">Paid on</th><th className="px-4 py-2">Work period</th>
+                <th className="px-4 py-2 text-right">Cash</th><th className="px-4 py-2 text-right">Advance recovered</th>
+              </tr></thead>
+              <tbody>
+                {data.payments.map((p) => (
+                  <tr key={p.id} className={`border-b last:border-0 ${p.status === "REVERSED" ? "text-muted-foreground line-through" : ""}`}>
+                    <td className="px-4 py-2"><Link href={`/salary/payments/${p.id}`} className="font-mono text-xs text-primary hover:underline">{p.receiptNo}</Link></td>
+                    <td className="px-4 py-2">{formatDate(p.paymentDate)}</td>
+                    <td className="px-4 py-2 text-xs">{formatDate(p.periodStart)} to {formatDate(p.periodEnd)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{formatPKR(p.cash)}</td><td className="px-4 py-2 text-right tabular-nums">{formatPKR(p.recovery)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Advances (latest 20)</CardTitle></CardHeader>
+        <CardContent className="overflow-x-auto p-0 sm:p-0">
+          {data.advanceRows.length === 0 ? <Empty text="No advances." /> : (
+            <table className="w-full text-sm">
+              <thead className="border-y bg-muted/50 text-left"><tr>
+                <th className="px-4 py-2">Date</th><th className="px-4 py-2 text-right">Amount</th><th className="px-4 py-2 text-right">Recovered</th><th className="px-4 py-2">Status</th>
+              </tr></thead>
+              <tbody>
+                {data.advanceRows.map((a) => (
+                  <tr key={a.id} className="border-b last:border-0">
+                    <td className="px-4 py-2">{formatDate(a.date)}</td><td className="px-4 py-2 text-right tabular-nums">{formatPKR(a.amount)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{formatPKR(a.recovered)}</td><td className="px-4 py-2"><StatusBadge status={a.status} /></td>
                   </tr>
                 ))}
               </tbody>

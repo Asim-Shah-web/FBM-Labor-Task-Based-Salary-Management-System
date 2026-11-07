@@ -1,6 +1,6 @@
 # FBM Labor & Task-Based Salary System: Phase 1 Architecture
 
-Status: **approved; Phases 2 and 3 implemented** (see `README.md`).
+Status: **approved; Phases 2, 3 and 4 implemented** (see `README.md`).
 Companion file: `prisma/schema.prisma`.
 
 ---
@@ -280,6 +280,14 @@ Corrected payments are posted as new settlements. Reversed payments stay visible
 
 ---
 
+### 4.9 Implementation notes (Phase 4)
+- Receipt numbers (`SP-YYYY-NNNNNN`) are generated inside the settlement transaction under a global advisory lock
+  (`pg_advisory_xact_lock`), taken last, so numbers are sequential and never duplicated.
+- Lock order is always: worker row, earning rows, advance rows, then the receipt advisory lock, so settlements cannot deadlock.
+- Idempotency is checked after the worker lock is acquired, so two identical concurrent requests produce exactly one payment.
+- Recovery is applied before cash within each date; advances are drawn oldest first (`pairRecoveries`).
+- Reversal restores `settledAmount` / `recoveredAmount`, keeps allocation and recovery rows, and marks the payment REVERSED.
+
 ## 5. Database-level integrity (raw SQL migration)
 
 Prisma can't express these, so they live in `prisma/sql/financial_constraints.sql`, which `npm run db:init` appends to the generated init migration (single migration, applied once). The file is the authoritative version; the excerpt below is abbreviated:
@@ -374,7 +382,7 @@ Login success/failure/lockout, password changes, user/role changes, worker creat
 | **1. Architecture** (this doc) | Schema, services, auth design | You approve; Q1–Q7 answered |
 | **2. Setup** (done) | Next.js + TS + Tailwind + shadcn-style UI, Prisma + Postgres (Docker Compose), migrations incl. raw constraints, Auth.js login/logout/change-password, seed roles + users, responsive app shell (sidebar/drawer), audit service, money helpers, unit tests | Log in, role-gated shell, migrations apply on a clean DB |
 | **3. Core modules** (done) | Workers, Tasks & rate history, Attendance (single + bulk), Work entry (bulk grid, draft/approve/void), Allowances | Per-day totals correct; rate change doesn't alter old entries (test) |
-| **4. Financial** | Earnings ledger, settlement preview/post/reverse, allocation engine, partial payments, advances, recovery | Spec example passes; concurrency test: two simultaneous settlements never over-settle; `reconcile()` shows zero drift |
+| **4. Financial** (done) | Earnings ledger, settlement preview/post/reverse, allocation engine, partial payments, advances, recovery | Spec example passes; concurrency test: two simultaneous settlements never over-settle; `reconcile()` shows zero drift |
 | **5. Reports** | Dashboard, 6 reports, filters, print, Excel/PDF | Earned vs cash separation verified with an Oct-earned/Nov-paid fixture |
 | **6. Security & testing** | Permission matrix tests, audit review, rate limiting, error boundaries, backup/restore drill | Every server action has an authz test; restore verified |
 | **7. Deployment** | Docker image, env/secrets, TLS reverse proxy, scheduled backups, PWA manifest, runbook | Production deploy checklist signed off |

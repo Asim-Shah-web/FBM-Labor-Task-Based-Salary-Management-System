@@ -111,7 +111,7 @@ export async function setWorkerStatus(actor: Actor, id: string, status: "ACTIVE"
 }
 
 export async function getWorkerProfileData(id: string) {
-  const [attendance, entries, allowances, attendanceCounts, earned, advances] = await Promise.all([
+  const [attendance, entries, allowances, attendanceCounts, earned, advances, payments, advanceRows] = await Promise.all([
     prisma.attendance.findMany({ where: { workerId: id }, orderBy: { date: "desc" }, take: 60 }),
     prisma.dailyWorkEntry.findMany({
       where: { workerId: id }, orderBy: [{ workDate: "desc" }, { createdAt: "desc" }], take: 100,
@@ -121,6 +121,8 @@ export async function getWorkerProfileData(id: string) {
     prisma.attendance.groupBy({ by: ["status"], where: { workerId: id }, _count: { _all: true } }),
     prisma.earning.aggregate({ where: { workerId: id, status: "ACTIVE" }, _sum: { amount: true, settledAmount: true } }),
     prisma.advance.aggregate({ where: { workerId: id, status: "ACTIVE" }, _sum: { amount: true, recoveredAmount: true } }),
+    prisma.salaryPayment.findMany({ where: { workerId: id }, orderBy: [{ paymentDate: "desc" }, { createdAt: "desc" }], take: 20 }),
+    prisma.advance.findMany({ where: { workerId: id }, orderBy: { advanceDate: "desc" }, take: 20 }),
   ]);
   const zero = new Prisma.Decimal(0);
   const totalEarned = earned._sum.amount ?? zero;
@@ -135,6 +137,13 @@ export async function getWorkerProfileData(id: string) {
       rate: e.appliedRate.toString(), amount: e.amount.toString(), status: e.status,
     })),
     allowances: allowances.map((a) => ({ id: a.id, workDate: fromDbDate(a.workDate), amount: a.amount.toString(), reason: a.reason, status: a.status })),
+    payments: payments.map((p) => ({
+      id: p.id, receiptNo: p.receiptNo, paymentDate: fromDbDate(p.paymentDate), periodStart: fromDbDate(p.periodStart),
+      periodEnd: fromDbDate(p.periodEnd), cash: p.cashAmount.toString(), recovery: p.advanceRecoveryAmount.toString(), status: p.status,
+    })),
+    advanceRows: advanceRows.map((a) => ({
+      id: a.id, date: fromDbDate(a.advanceDate), amount: a.amount.toString(), recovered: a.recoveredAmount.toString(), status: a.status,
+    })),
     totals: {
       earned: totalEarned.toString(), settled: totalSettled.toString(),
       outstanding: totalEarned.minus(totalSettled).toString(),

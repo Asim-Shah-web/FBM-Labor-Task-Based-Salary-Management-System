@@ -42,17 +42,17 @@ irregular salary payments, advances, and reports.
 |---|---|---|
 | 1 | Architecture, database design, financial logic design | Done |
 | 2 | Project setup, authentication, app shell, audit log | Done |
-| 3 | Workers, tasks and rates, attendance, daily work entry, daily allowances | **Done** |
-| 4 | Salary settlements, oldest-first payments, advances and recovery | Next |
+| 3 | Workers, tasks and rates, attendance, daily work entry, daily allowances | Done |
+| 4 | Salary settlements, oldest-first payments, reversals, advances and recovery | **Done** |
 | 5 | Dashboard analytics and reports (print, Excel, PDF) | Planned |
 | 6 | Security hardening, integration tests, backups | Planned |
 | 7 | Production deployment, PWA | Planned |
 
-The salary, advances, and reports screens appear in the menu as placeholders until their phase is built.
+Only the **Reports** screen is still a placeholder (Phase 5).
 
 ## Features
 
-**Available now (Phases 2 and 3)**
+**Available now (Phases 2 to 4)**
 
 - **One secure manager account** (the administrator). Mandatory login, argon2id password hashing,
   account lockout, session expiry, forced password change on first login, full audit log.
@@ -69,11 +69,20 @@ The salary, advances, and reports screens appear in the menu as placeholders unt
   may be zero, never automatic, kept separate from task earnings.
 - **Earnings ledger:** every approved entry and allowance creates exactly one ledger row, the source of truth
   for what each worker has earned.
-- **Dashboard:** active workers, today's attendance, wages earned this month split into task earnings and allowances.
+- **Salary settlements:** pick any work period, enter the cash paid, and the server applies it to the **oldest unpaid
+  dates first**. Partial payments are supported; each date shows Paid / Partially Paid / Unpaid. Over-payment is blocked.
+  Every payment keeps a permanent allocation record and a receipt number (`SP-2026-000001`).
+- **Safe corrections:** a settlement is never edited or deleted. It can be **reversed** (with a reason) and re-recorded;
+  the reversed payment stays on record.
+- **Advances:** cash given before wages are earned, tracked separately from wages. Recovery happens only when the manager
+  enters a recovery amount during a settlement; the system records exactly which earnings funded it.
+- **Concurrency-safe:** row locks, an idempotency key (double-click safe), and database CHECK constraints make
+  over-settling impossible even if two payments are submitted at the same moment.
+- **Dashboard:** active workers, today's attendance, wages earned this month (task earnings and allowances),
+  cash paid this month, outstanding wages, unrecovered advances, and recent settlements, each shown separately.
 - **Responsive and touch-friendly:** sidebar on desktop, drawer on phones, card layouts on small screens.
 
-**Coming next:** salary settlements with oldest-first allocation and partial payments (Phase 4), advances and
-recovery (Phase 4), reports and exports (Phase 5).
+**Coming next:** reports (monthly wage report, worker salary statement, attendance, production, outstanding, advances) with print, Excel and PDF export (Phase 5).
 
 ## Business rules the system enforces
 
@@ -90,8 +99,14 @@ recovery (Phase 4), reports and exports (Phase 5).
 9. Money uses exact decimals (PostgreSQL `NUMERIC(14,2)` and decimal.js), never floating point.
 10. Calculations are done on the **server.** The amount preview in the browser is only a convenience.
 11. Daily records cannot be entered for a **future date**; dates use Pakistan time (Asia/Karachi).
-12. Salary rules (implemented in Phase 4): payments go to the **oldest unpaid earnings first** within the manager-selected
-    period; partial payments are supported; advances are separate from wages and recovered only when the manager explicitly chooses.
+12. **Salary payments** go to the **oldest unpaid earnings first** within the manager-selected period. A date that is only
+    partly paid stays partly outstanding; the whole period is never simply marked paid.
+13. A payment can never exceed the outstanding wages of the selected period; extra money must be recorded as an advance.
+14. **Advances are not wages.** They never create earnings, and they are recovered only when the manager enters a recovery
+    amount in a settlement (oldest advance first). The same advance money can never be recovered twice.
+15. **Cash paid** is reported by payment date and **wages earned** by work date, never mixed: a November payment for October
+    work counts as November cash and October earnings.
+16. Payment, allocation, and audit history is append-only; the database rejects edits and deletes.
 
 ## Tech stack
 
@@ -197,13 +212,28 @@ Open <http://localhost:3000> and sign in with the username and password from you
 3. **Daily Allowances:** where a worker lost production time (machine breakdown and so on), enter the extra
    amount and an optional reason. Leave blank for none.
 
+**Paying salary (any time: after 15 days, 25 days, month end...)**
+
+1. **Salary Management:** find the worker and press **Settle**.
+2. Choose the exact **work period** being paid. The table shows every date as Paid, Partially Paid, or Unpaid.
+3. Enter the **cash paid** (and, only if you want to, an **advance recovery** amount). A preview shows how the
+   money will be applied, oldest dates first.
+4. Press **Record settlement**. You get a receipt number and a permanent record of which dates were paid.
+5. Paid too much, wrong worker, or wrong amount? Open the receipt and press **Reverse this settlement** (reason required),
+   then record the correct one.
+
+**Advances**
+
+- **Advances:** record cash given before wages are earned. It does not count as wages. Recover it later by entering
+  an *Advance recovered* amount in a settlement.
+
 **Fixing mistakes**
 
 - Wrong quantity: press **Correct** on the entry, enter the new quantity and a reason.
 - Wrong worker or task: press **Void** with a reason and re-enter it.
 - Wrong allowance: enter the right amount (or 0 to cancel) and save.
 - Nothing is silently overwritten: every change is recorded in the audit log with who, when, and before/after values.
-- If the money was already paid for that day, the system asks you to reverse that salary payment first (Phase 4).
+- If the money was already paid for that day, the system asks you to reverse that salary payment first, then correct the entry.
 
 ## Scripts
 
@@ -235,13 +265,15 @@ src/
     change-password/            Password change (also forced on first login)
     (app)/                      Authenticated area
       dashboard/ workers/ tasks/ attendance/ work-entry/ allowances/
-      [section]/                Placeholders for Phase 4+ modules
+      salary/ (settle, payments/[id])  advances/
+      [section]/                Placeholder for Phase 5 (reports)
     actions/                    Server Actions (thin: validate, authorize, call a service)
   server/
     auth/                       Auth.js config, argon2id, lockout, current user
     authz/                      Permission codes, requirePermission()
     services/                   Business logic: workers, tasks, rates, attendance,
-                                work entries, allowances, earnings ledger, audit, pricing
+                                work entries, allowances, earnings ledger, settlements,
+                                allocation engine, advances, balances, audit, pricing
     money/decimal.ts            Exact money math and PKR formatting
   components/                   UI primitives, layout shell, shared widgets
   lib/                          Dates (Asia/Karachi), validators (Zod), navigation
@@ -282,11 +314,19 @@ See [`docs/01-architecture.md`](docs/01-architecture.md) for the ER diagram and 
 ## Testing
 
 ```bash
-npm test             # 32 unit tests: money, pricing, rate history, dates, passwords, permissions
+npm test             # 45 unit tests: money, pricing, rate history, dates, passwords, permissions, allocation engine
 npm run typecheck
 ```
 
-Database-backed integration tests (settlement concurrency, reversals) arrive with Phase 4 and Phase 6.
+**Database integration tests** (settlement example, over-payment, simultaneous settlements, idempotency, advance
+recovery and reversal, blocked corrections, CHECK constraint) live in `tests/integration/settlement.int.test.ts`.
+They are skipped unless you point them at a **disposable** test database that has the schema applied
+(audit and payment history is append-only, so test data cannot be cleaned up):
+
+```bash
+# create a separate database, apply the schema to it, then:
+TEST_DATABASE_URL="postgresql://fbm:fbm_dev_password@localhost:5432/fbm_test?schema=public" npm test
+```
 
 Manual smoke test after setup:
 
@@ -296,6 +336,10 @@ Manual smoke test after setup:
 4. Change the Stitching rate to Rs. 60 effective today; the earlier entry must still show Rs. 50 per unit.
 5. Add an allowance of Rs. 230. The dashboard should show task earnings and allowances separately.
 6. Correct the quantity to 25; the old entry shows as Voided with its reason and a new approved entry appears.
+7. Enter work on three dates (Rs. 1,000 / 800 / 1,200), then in **Salary Management** settle that period with Rs. 1,500:
+   the dates must show Paid, Partially Paid (Rs. 300 left), and Unpaid.
+8. Try to pay more than the outstanding: it must be refused. Reverse the settlement: all three dates return to unpaid.
+9. Issue an advance of Rs. 400, then settle with Rs. 300 recovery: the advance balance drops to Rs. 100 and wages drop by Rs. 300.
 
 ## Troubleshooting
 
@@ -332,7 +376,7 @@ VIEWER roles; any old `admin` account is moved to the manager role, so delete it
 - [x] Phase 1: Architecture and database design
 - [x] Phase 2: Setup, authentication, app shell, audit log
 - [x] Phase 3: Workers, tasks and rates, attendance, work entry, allowances
-- [ ] Phase 4: Salary settlements (oldest-first, partial payments, reversals), advances and recovery
+- [x] Phase 4: Salary settlements (oldest-first, partial payments, reversals), advances and recovery
 - [ ] Phase 5: Dashboard analytics, reports (monthly wage, worker statement, attendance, production, outstanding, advances), print/Excel/PDF
 - [ ] Phase 6: Hardening: integration and concurrency tests, nonce-based CSP, backups
 - [ ] Phase 7: Production deployment (Docker, HTTPS, scheduled backups) and PWA install
