@@ -1,6 +1,6 @@
 # FBM Labor & Task-Based Salary System: Phase 1 Architecture
 
-Status: **approved; Phases 2, 3 and 4 implemented** (see `README.md`).
+Status: **approved; Phases 2 to 6 implemented** (see `README.md`).
 Companion file: `prisma/schema.prisma`.
 
 ---
@@ -367,6 +367,13 @@ Login success/failure/lockout, password changes, user/role changes, worker creat
 - Dashboard shows four separate cards: *Wages earned (this month)*, *Cash paid (this month)*, *Outstanding wages (as of date)*, *Unrecovered advances*.
 - Excel export via `exceljs`; PDF/print via print-optimized report pages. Exports run server-side with the same permission checks.
 
+### 7.1 Implementation notes (Phase 5)
+- Every report is built once on the server into a common `Report` structure (`src/lib/reports/types.ts`) and rendered by four
+  outputs (screen, print stylesheet, `exceljs`, `pdfkit`), so they can never disagree.
+- "Outstanding as of date X" is computed from allocation and recovery rows: a payment counts if its payment date is on or before X
+  and it was not reversed on or before X. It uses the currently approved earnings (later voids are not replayed).
+- Export is a permission-checked Route Handler (`report:export`) and every export is written to the audit log.
+
 ## 8. Responsive / PWA notes
 - shadcn `Sheet` as the mobile drawer; sidebar on `lg+`.
 - TanStack Table on desktop; on `< md`, rows render as stacked cards (shared column definitions drive both).
@@ -383,8 +390,8 @@ Login success/failure/lockout, password changes, user/role changes, worker creat
 | **2. Setup** (done) | Next.js + TS + Tailwind + shadcn-style UI, Prisma + Postgres (Docker Compose), migrations incl. raw constraints, Auth.js login/logout/change-password, seed roles + users, responsive app shell (sidebar/drawer), audit service, money helpers, unit tests | Log in, role-gated shell, migrations apply on a clean DB |
 | **3. Core modules** (done) | Workers, Tasks & rate history, Attendance (single + bulk), Work entry (bulk grid, draft/approve/void), Allowances | Per-day totals correct; rate change doesn't alter old entries (test) |
 | **4. Financial** (done) | Earnings ledger, settlement preview/post/reverse, allocation engine, partial payments, advances, recovery | Spec example passes; concurrency test: two simultaneous settlements never over-settle; `reconcile()` shows zero drift |
-| **5. Reports** | Dashboard, 6 reports, filters, print, Excel/PDF | Earned vs cash separation verified with an Oct-earned/Nov-paid fixture |
-| **6. Security & testing** | Permission matrix tests, audit review, rate limiting, error boundaries, backup/restore drill | Every server action has an authz test; restore verified |
+| **5. Reports** (done) | Dashboard, 6 reports, filters, print, Excel/PDF | Earned vs cash separation verified with an Oct-earned/Nov-paid fixture |
+| **6. Security & testing** (done) | Permission matrix tests, audit review, rate limiting, error boundaries, backup/restore drill | Every server action has an authz test; restore verified |
 | **7. Deployment** | Docker image, env/secrets, TLS reverse proxy, scheduled backups, PWA manifest, runbook | Production deploy checklist signed off |
 
 **Test strategy highlights:** unit tests on `allocateOldestFirst` and money rounding (property-based: Σ allocations = pool, never exceed outstanding); integration tests against real Postgres for settlement, reversal, advance recovery, and a parallel-settlement race; permission tests per role; one Playwright smoke path (login → entry → approve → settle → statement).

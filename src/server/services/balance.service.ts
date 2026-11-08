@@ -96,3 +96,43 @@ export async function companyTotals(monthStart: string, today: string) {
     recoveredThisMonth: cash._sum.advanceRecoveryAmount?.toString() ?? "0",
   };
 }
+
+// ───────────── Dashboard analytics ─────────────
+const monthKeys = (today: string, n: number): string[] => {
+  const [y, m] = today.split("-").map(Number) as [number, number];
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(Date.UTC(y, m - 1 - (n - 1 - i), 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  });
+};
+
+/** Wages EARNED (by work date) vs CASH PAID (by payment date) for the last `n` months. Chart display only. */
+export async function monthlyTrend(today: string, n = 6) {
+  const keys = monthKeys(today, n);
+  const from = `${keys[0]}-01`;
+  const [earned, cash] = await Promise.all([
+    prisma.$queryRaw<{ m: string; total: unknown }[]>`
+      SELECT to_char("workDate", 'YYYY-MM') AS m, SUM(amount) AS total FROM "earnings"
+      WHERE status = 'ACTIVE' AND "workDate" >= CAST(${from} AS date) GROUP BY 1`,
+    prisma.$queryRaw<{ m: string; total: unknown }[]>`
+      SELECT to_char("paymentDate", 'YYYY-MM') AS m, SUM("cashAmount") AS total FROM "salary_payments"
+      WHERE status = 'POSTED' AND "paymentDate" >= CAST(${from} AS date) GROUP BY 1`,
+  ]);
+  return keys.map((k) => ({
+    month: k,
+    earned: Number(earned.find((e) => e.m === k)?.total ?? 0),
+    cash: Number(cash.find((c) => c.m === k)?.total ?? 0),
+  }));
+}
+
+/** Approved task earnings per day for the last `n` days. Chart display only. */
+export async function dailyProduction(today: string, n = 14) {
+  const days = Array.from({ length: n }, (_, i) => {
+    const d = new Date(Date.parse(`${today}T00:00:00Z`) - (n - 1 - i) * 86_400_000);
+    return d.toISOString().slice(0, 10);
+  });
+  const rows = await prisma.$queryRaw<{ d: string; total: unknown }[]>`
+    SELECT to_char("workDate", 'YYYY-MM-DD') AS d, SUM(amount) AS total FROM "earnings"
+    WHERE status = 'ACTIVE' AND "sourceType" = 'TASK_ENTRY' AND "workDate" >= CAST(${days[0]!} AS date) GROUP BY 1`;
+  return days.map((d) => ({ day: d.slice(5), earned: Number(rows.find((r) => r.d === d)?.total ?? 0) }));
+}

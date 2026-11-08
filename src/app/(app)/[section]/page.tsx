@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SectionPlaceholder({ params }: { params: Promise<{ section: string }> }) {
   const { section } = await params;
-  const item = NAV_ITEMS.find((i) => i.href === `/${section}` && i.phase > 4);
+  const item = NAV_ITEMS.find((i) => i.href === `/${section}` && i.phase > 6);
   if (!item) notFound();
   await requirePagePermission(item.permission);
 

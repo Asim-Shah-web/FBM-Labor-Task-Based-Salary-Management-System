@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 import { AuthzError } from "@/server/authz/require";
 import { DomainError } from "@/server/errors";
+import { logger } from "@/server/logger";
 
 export type ActionResult<T = undefined> =
   | { ok: true; data?: T; message?: string }
@@ -23,7 +24,7 @@ export async function runAction<T>(fn: () => Promise<{ data?: T; message?: strin
     if (e instanceof ZodError) return { ok: false, error: e.issues[0]?.message ?? "Invalid input." };
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")
       return { ok: false, error: "That record already exists (duplicate)." };
-    console.error("Unexpected action error:", e);
+    logger.error("Unexpected action error", e);
     return { ok: false, error: "Something went wrong. Please try again." };
   }
 }

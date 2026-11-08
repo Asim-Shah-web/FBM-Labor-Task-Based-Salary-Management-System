@@ -43,16 +43,16 @@ irregular salary payments, advances, and reports.
 | 1 | Architecture, database design, financial logic design | Done |
 | 2 | Project setup, authentication, app shell, audit log | Done |
 | 3 | Workers, tasks and rates, attendance, daily work entry, daily allowances | Done |
-| 4 | Salary settlements, oldest-first payments, reversals, advances and recovery | **Done** |
-| 5 | Dashboard analytics and reports (print, Excel, PDF) | Planned |
-| 6 | Security hardening, integration tests, backups | Planned |
+| 4 | Salary settlements, oldest-first payments, reversals, advances and recovery | Done |
+| 5 | Dashboard analytics and reports (print, Excel, PDF) | Done |
+| 6 | Security hardening, tests, backups, audit log, integrity checks | **Done** |
 | 7 | Production deployment, PWA | Planned |
 
-Only the **Reports** screen is still a placeholder (Phase 5).
+All modules and hardening are implemented. The remaining work is production deployment and the installable app (Phase 7).
 
 ## Features
 
-**Available now (Phases 2 to 4)**
+**Available now (Phases 2 to 6)**
 
 - **One secure manager account** (the administrator). Mandatory login, argon2id password hashing,
   account lockout, session expiry, forced password change on first login, full audit log.
@@ -78,11 +78,26 @@ Only the **Reports** screen is still a placeholder (Phase 5).
   enters a recovery amount during a settlement; the system records exactly which earnings funded it.
 - **Concurrency-safe:** row locks, an idempotency key (double-click safe), and database CHECK constraints make
   over-settling impossible even if two payments are submitted at the same moment.
-- **Dashboard:** active workers, today's attendance, wages earned this month (task earnings and allowances),
-  cash paid this month, outstanding wages, unrecovered advances, and recent settlements, each shown separately.
+- **Dashboard:** active workers, present and absent today, wages earned this month (task earnings and allowances),
+  cash paid this month, outstanding wages, unrecovered advances, recent settlements and recent production, plus charts
+  (wages earned vs cash paid for six months, daily task earnings). The money figures are never combined into one number.
+- **Reports** (screen, print, Excel, PDF), filterable by worker, department, date range, month, and task:
+  - **Monthly Wage Report:** task earnings, allowances, total earned, cash paid in the month, outstanding wages.
+  - **Worker Salary Statement:** daily earnings, payment allocations, paid / partially paid / unpaid dates, advances, balance.
+  - **Attendance Report:** present, absent, and leave days.
+  - **Production Report:** task-wise, worker-wise, daily, and monthly totals.
+  - **Outstanding Salary Report:** every unpaid work date with original, settled, and remaining amounts, as of any date.
+  - **Advance Report:** advances issued, recovered, and outstanding, with the recovery history.
 - **Responsive and touch-friendly:** sidebar on desktop, drawer on phones, card layouts on small screens.
 
-**Coming next:** reports (monthly wage report, worker salary statement, attendance, production, outstanding, advances) with print, Excel and PDF export (Phase 5).
+- **Audit Log page:** search and filter every recorded action (who, when, before/after values). Entries cannot be edited or deleted.
+- **Financial integrity check:** one click (or `npm run db:reconcile`) recomputes all balances from the permanent history and
+  confirms they match; any difference is listed by record ID.
+- **Backups:** `npm run db:backup` (verified, rotated) and `npm run db:restore` (safe test restore by default).
+- **Hardening:** nonce-based Content-Security-Policy, automated checks that every action and page is permission-protected,
+  safe error pages, a health endpoint, export rate limiting, and a clean dependency audit.
+
+**Coming next:** production deployment (Docker, HTTPS, scheduled backups) and the installable app (Phase 7).
 
 ## Business rules the system enforces
 
@@ -222,6 +237,12 @@ Open <http://localhost:3000> and sign in with the username and password from you
 5. Paid too much, wrong worker, or wrong amount? Open the receipt and press **Reverse this settlement** (reason required),
    then record the correct one.
 
+**Reports**
+
+- Open **Reports**, choose a report, set the filters, and press **Show report**. Use **Print**, **Excel**, or **PDF** to take it away.
+- Earnings are counted by **work date** and cash by **payment date**: a November payment for October work appears as
+  November cash and October earnings. Check the Monthly Wage Report to see this.
+
 **Advances**
 
 - **Advances:** record cash given before wages are earned. It does not count as wages. Recover it later by entering
@@ -249,6 +270,9 @@ Open <http://localhost:3000> and sign in with the username and password from you
 | `npm run db:deploy` | Apply existing migrations (servers/production) |
 | `npm run db:seed` | Create or sync the manager role and account |
 | `npm run db:studio` | Open Prisma Studio to browse data |
+| `npm run db:backup` | Create a verified backup in `backups/` (keeps the newest 30) |
+| `npm run db:restore -- <file>` | Test-restore a backup into a separate database (add `--live --confirm=OVERWRITE` for disaster recovery) |
+| `npm run db:reconcile` | Run the financial integrity checks (exit code 1 if anything is inconsistent) |
 
 ## Project structure
 
@@ -257,7 +281,9 @@ prisma/
   schema.prisma                 Database schema (money is NUMERIC(14,2))
   sql/financial_constraints.sql CHECKs, partial unique indexes, immutability triggers
   seed.ts                       Roles, permissions, manager account
-scripts/init-db.mjs             One-time database bootstrap
+scripts/                        init-db, backup, restore, reconcile
+docs/02-security.md             Security controls, limitations, go-live checklist
+docs/03-operations.md           Backups, restore drill, monitoring, incident runbook
 docs/01-architecture.md         Architecture, ER diagram, financial design
 src/
   app/
@@ -265,18 +291,21 @@ src/
     change-password/            Password change (also forced on first login)
     (app)/                      Authenticated area
       dashboard/ workers/ tasks/ attendance/ work-entry/ allowances/
-      salary/ (settle, payments/[id])  advances/
-      [section]/                Placeholder for Phase 5 (reports)
+      salary/ (settle, payments/[id])  advances/  reports/[type]  audit/
+    api/reports/[type]/export   Excel and PDF downloads (permission-checked)
+    api/health                  Uptime/readiness check
+    error.tsx, not-found.tsx    Safe error pages
     actions/                    Server Actions (thin: validate, authorize, call a service)
   server/
     auth/                       Auth.js config, argon2id, lockout, current user
     authz/                      Permission codes, requirePermission()
     services/                   Business logic: workers, tasks, rates, attendance,
-                                work entries, allowances, earnings ledger, settlements,
+                                work entries, allowances, earnings ledger, settlements, reports,
                                 allocation engine, advances, balances, audit, pricing
+    reports/                    Excel (exceljs) and PDF (pdfkit) renderers
     money/decimal.ts            Exact money math and PKR formatting
   components/                   UI primitives, layout shell, shared widgets
-  lib/                          Dates (Asia/Karachi), validators (Zod), navigation
+  lib/                          Dates (Asia/Karachi), validators (Zod), navigation, report model
 tests/                          Unit tests
 ```
 
@@ -304,22 +333,27 @@ See [`docs/01-architecture.md`](docs/01-architecture.md) for the ER diagram and 
 - Account lockout after 5 failed attempts (escalating), plus a per-IP rate limit; one generic error message so attackers cannot
   tell whether a username exists.
 - Sessions: 30 minutes idle and 8 hours absolute by default; changing the password signs out all sessions.
-- Security headers (CSP, X-Frame-Options, HSTS in production, and more).
+- Security headers, including a **per-request nonce Content-Security-Policy** (no inline scripts), X-Frame-Options, and HSTS in production.
 - Append-only **audit log** for logins, worker and task changes, rate changes, attendance corrections, entries, allowances, voids.
+- Database-level protection: CHECK constraints and triggers make financial history append-only even against raw SQL.
+- Automated guards fail the build if any server action or page lacks a permission check, or if browser code imports server code.
 - Known trade-offs: lockout can be abused to lock the manager out for a short time; the IP limiter trusts `X-Forwarded-For` and needs a
-  reverse proxy that sets it; the CSP currently allows inline scripts needed by Next.js (nonce-based CSP is planned for Phase 6).
+  reverse proxy that sets it; there is no two-factor login yet. See [`docs/02-security.md`](docs/02-security.md).
 
-**Before going live:** change `AUTH_SECRET` and the manager password, serve only over HTTPS, and set up database backups.
+**Before going live:** follow the checklist in [`docs/02-security.md`](docs/02-security.md): change `AUTH_SECRET` and the manager password, serve only over HTTPS, schedule backups and copy them off the machine, and complete one test restore.
 
 ## Testing
 
 ```bash
-npm test             # 45 unit tests: money, pricing, rate history, dates, passwords, permissions, allocation engine
+npm test             # 85 unit tests: money, pricing, rate history, dates, passwords, permissions, allocation engine, reports, Excel/PDF,
+                     # CSP, runtime permission checks, and source-code security guards
 npm run typecheck
 ```
 
-**Database integration tests** (settlement example, over-payment, simultaneous settlements, idempotency, advance
-recovery and reversal, blocked corrections, CHECK constraint) live in `tests/integration/settlement.int.test.ts`.
+**Database integration tests** live in `tests/integration/`: `settlement.int.test.ts` (settlement example, over-payment, simultaneous
+settlements, idempotency, advance recovery and reversal, blocked corrections, CHECK constraint) and `reports.int.test.ts`
+(October earned / November paid separation, as-of outstanding, worker statement), and `security.int.test.ts` (the database rejects
+edits to financial history, over-settling and negative amounts; the integrity check detects drift).
 They are skipped unless you point them at a **disposable** test database that has the schema applied
 (audit and payment history is append-only, so test data cannot be cleaned up):
 
@@ -340,6 +374,9 @@ Manual smoke test after setup:
    the dates must show Paid, Partially Paid (Rs. 300 left), and Unpaid.
 8. Try to pay more than the outstanding: it must be refused. Reverse the settlement: all three dates return to unpaid.
 9. Issue an advance of Rs. 400, then settle with Rs. 300 recovery: the advance balance drops to Rs. 100 and wages drop by Rs. 300.
+10. Open **Reports > Monthly Wage Report** for the month of your work: earned and cash are separate columns.
+    Export it to Excel and PDF and check the totals match the screen. Print preview should hide the menu.
+11. Open **Reports > Outstanding Salary Report** and change the *As of date* to before your payment: the old balance returns.
 
 ## Troubleshooting
 
@@ -368,6 +405,8 @@ rm -rf prisma/migrations
 npm run db:up && npm run db:init && npm run db:seed
 ```
 
+**The app shows "Something went wrong".** Note the Reference code on the page and look for the matching `"level":"error"` line in the server log.
+
 **Upgrading from the Phase 2 build.** The database schema did not change. Run `npm run db:seed` once to retire the old ADMIN and
 VIEWER roles; any old `admin` account is moved to the manager role, so delete it if you do not need it.
 
@@ -377,14 +416,16 @@ VIEWER roles; any old `admin` account is moved to the manager role, so delete it
 - [x] Phase 2: Setup, authentication, app shell, audit log
 - [x] Phase 3: Workers, tasks and rates, attendance, work entry, allowances
 - [x] Phase 4: Salary settlements (oldest-first, partial payments, reversals), advances and recovery
-- [ ] Phase 5: Dashboard analytics, reports (monthly wage, worker statement, attendance, production, outstanding, advances), print/Excel/PDF
-- [ ] Phase 6: Hardening: integration and concurrency tests, nonce-based CSP, backups
+- [x] Phase 5: Dashboard analytics, reports (monthly wage, worker statement, attendance, production, outstanding, advances), print/Excel/PDF
+- [x] Phase 6: Hardening: permission guards, nonce-based CSP, audit log page, integrity checks, backups and restore, dependency audit
 - [ ] Phase 7: Production deployment (Docker, HTTPS, scheduled backups) and PWA install
 
 ## Documentation
 
 - [`docs/01-architecture.md`](docs/01-architecture.md): architecture proposal, ER diagram, salary calculation logic,
   service breakdown, authentication design, database integrity rules, roadmap.
+- [`docs/02-security.md`](docs/02-security.md): threats and controls, known limitations, go-live checklist.
+- [`docs/03-operations.md`](docs/03-operations.md): backups, restore drill, integrity checks, monitoring, incident runbook.
 
 ## License
 

@@ -2,7 +2,8 @@ import { requirePagePermission } from "@/server/authz/require";
 import { prisma } from "@/server/db/prisma";
 import { toDbDate, todayKarachi, formatDate } from "@/lib/dates";
 import { formatPKR, sum } from "@/server/money/decimal";
-import { companyTotals } from "@/server/services/balance.service";
+import { companyTotals, dailyProduction, monthlyTrend } from "@/server/services/balance.service";
+import { DashboardCharts } from "@/components/shared/dashboard-charts";
 import { listPayments } from "@/server/services/settlement.service";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +17,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const today = todayKarachi();
   const monthStart = `${today.slice(0, 7)}-01`;
 
-  const [totals, recent, activeWorkers, present, absent, onLeave, taskEarn, allowEarn] = await Promise.all([
+  const [trend, daily, recentWork, totals, recent, activeWorkers, present, absent, onLeave, taskEarn, allowEarn] = await Promise.all([
+    monthlyTrend(today, 6),
+    dailyProduction(today, 14),
+    prisma.dailyWorkEntry.findMany({
+      where: { status: "APPROVED" }, orderBy: { createdAt: "desc" }, take: 8,
+      include: { worker: { select: { fullName: true } }, task: { select: { name: true, unitLabel: true } } },
+    }),
     companyTotals(monthStart, today),
     listPayments({ take: 5 }),
     prisma.worker.count({ where: { status: "ACTIVE" } }),
@@ -66,6 +73,25 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
+      <DashboardCharts trend={trend} daily={daily} />
+
+      <div className="grid gap-4 lg:grid-cols-2">
+      <Card>
+        <CardHeader><CardTitle>Recent production activity</CardTitle></CardHeader>
+        <CardContent>
+          {recentWork.length === 0 ? <p className="text-sm text-muted-foreground">No approved work yet.</p> : (
+            <ul className="divide-y text-sm">
+              {recentWork.map((e) => (
+                <li key={e.id} className="flex items-center justify-between gap-2 py-2">
+                  <span className="min-w-0 truncate">{e.worker.fullName} <span className="text-xs text-muted-foreground">{e.task.name}: {e.quantity.toString()}{e.task.unitLabel ? ` ${e.task.unitLabel}` : ""} on {formatDate(e.workDate.toISOString().slice(0, 10))}</span></span>
+                  <span className="font-medium tabular-nums">{formatPKR(e.amount.toString())}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader><CardTitle>Recent salary settlements</CardTitle></CardHeader>
         <CardContent>
@@ -81,6 +107,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

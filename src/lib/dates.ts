@@ -44,3 +44,13 @@ export function resolveDateParam(param: string | undefined, today = todayKarachi
   if (param && isValidIsoDate(param) && param <= today) return param;
   return today;
 }
+
+/** "2026-11-07T14:32:00Z" -> "07 Nov 2026, 19:32" in Pakistan time. */
+export function formatDateTimeKarachi(iso: string | Date): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Karachi", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d);
+  const g = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${g("day")} ${g("month")} ${g("year")}, ${g("hour")}:${g("minute")}`;
+}

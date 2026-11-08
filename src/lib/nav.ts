@@ -2,7 +2,7 @@ import type { PermissionCode } from "@/server/authz/permissions";
 
 export type NavKey =
   | "dashboard" | "workers" | "tasks" | "attendance" | "work-entry" | "allowances"
-  | "salary" | "advances" | "reports";
+  | "salary" | "advances" | "reports" | "audit";
 
 export type NavItem = { key: NavKey; label: string; href: string; permission: PermissionCode; phase: number };
 
@@ -16,4 +16,5 @@ export const NAV_ITEMS: NavItem[] = [
   { key: "salary", label: "Salary Management", href: "/salary", permission: "settlement:read", phase: 4 },
   { key: "advances", label: "Advances", href: "/advances", permission: "advance:read", phase: 4 },
   { key: "reports", label: "Reports", href: "/reports", permission: "report:read", phase: 5 },
+  { key: "audit", label: "Audit Log", href: "/audit", permission: "audit:read", phase: 6 },
 ];

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BanknoteIcon, CalendarCheck, ClipboardList, HandCoins, LayoutDashboard, ListChecks,
-  LogOut, Menu, Users, Wallet, BarChart3, KeyRound, type LucideIcon,
+  LogOut, Menu, ShieldCheck, Users, Wallet, BarChart3, KeyRound, type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ const ICONS: Record<NavKey, LucideIcon> = {
   salary: Wallet,
   advances: BanknoteIcon,
   reports: BarChart3,
+  audit: ShieldCheck,
 };
 
 export type ShellNavItem = { key: NavKey; label: string; href: string };
@@ -77,9 +78,9 @@ export function AppShell({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[16rem_1fr]">
+    <div className="min-h-dvh lg:grid lg:grid-cols-[16rem_1fr] print:block">
       {/* Desktop sidebar */}
-      <aside className="sticky top-0 hidden h-dvh flex-col border-r bg-card lg:flex">
+      <aside className="sticky top-0 hidden h-dvh flex-col border-r bg-card lg:flex print:hidden">
         <Brand />
         <div className="flex-1 overflow-y-auto"><NavList items={items} /></div>
       </aside>
@@ -95,7 +96,7 @@ export function AppShell({
       </Sheet>
 
       <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-card/95 px-3 backdrop-blur sm:px-4">
+        <header className="sticky top-0 z-30 flex h-14 print:hidden items-center gap-2 border-b bg-card/95 px-3 backdrop-blur sm:px-4">
           <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open menu" onClick={() => setOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
@@ -116,7 +117,7 @@ export function AppShell({
             </Button>
           </form>
         </header>
-        <main className="flex-1 p-3 sm:p-6">{children}</main>
+        <main className="flex-1 p-3 sm:p-6 print:p-0">{children}</main>
       </div>
     </div>
   );
