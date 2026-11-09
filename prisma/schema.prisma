@@ -83,6 +83,7 @@ model User {
 
   roles               UserRole[]
   passwordResetTokens PasswordResetToken[]
+  loginChallenges     LoginChallenge[]
   auditLogs           AuditLog[]
 
   rateChanges        TaskRateHistory[]  @relation("RateCreatedBy")
@@ -152,6 +153,27 @@ model PasswordResetToken {
 
   @@index([userId])
   @@map("password_reset_tokens")
+}
+
+// Second login step: a one-time code emailed to the manager. A session is only ever created from a
+// challenge whose code was entered correctly (see src/server/auth/otp.ts).
+model LoginChallenge {
+  id         String    @id // 256-bit random token, known only to the browser that started the login
+  userId     String
+  codeHash   String // HMAC of the code; the code itself is never stored
+  attempts   Int       @default(0) // wrong guesses so far (cumulative across resends)
+  sends      Int       @default(1) // how many emails were sent for this challenge
+  lastSentAt DateTime  @default(now())
+  expiresAt  DateTime
+  verifiedAt DateTime? // set when the correct code is entered
+  consumedAt DateTime? // set when the session is created, or when the challenge is invalidated
+  ip         String?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("login_challenges")
 }
 
 // ───────────────────────── Workers ─────────────────────────

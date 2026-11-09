@@ -342,7 +342,8 @@ Additional guard (also in the migration): triggers that reject UPDATE of `earnin
 ## 6. Authentication and permissions
 
 ### 6.1 Authentication
-- **Auth.js v5 Credentials provider**, username or email + password.
+- **Two-step login.** Step 1: username/email + password (checked in `credentials.ts`, never creates a session). Step 2: a 6-digit one-time code emailed to the manager (`otp.ts`). The Auth.js Credentials provider accepts only a challenge id whose code was verified, so a password alone cannot create a session. See `docs/05-two-factor-and-cloudflare.md`.
+- **Auth.js v5 Credentials provider** (session creation only).
 - Passwords hashed with **argon2id** (`@node-rs/argon2`). Minimum length 10, checked against a small common-password list.
 - **JWT session cookie** (httpOnly, Secure, SameSite=Lax), which Auth.js requires for Credentials. The JWT carries `userId` and `sessionVersion`; **every protected server call re-checks `isActive` and `sessionVersion` against the DB**, so deactivating a user or changing a password kills existing sessions immediately.
 - Session lifetime: 8 hours absolute, 30 minutes sliding refresh for activity (configurable). Mobile managers re-login daily.

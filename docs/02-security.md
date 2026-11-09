@@ -9,6 +9,8 @@ caught by several independent layers, not by one check.
 |---|---|---|---|
 | Someone opens the app without logging in | Middleware redirects to `/login`; every page, action and download re-checks the session on the server | `src/middleware.ts`, `src/server/authz/require.ts` | `tests/security/static-guards.test.ts`, `authz-runtime.test.ts` |
 | A user does something they are not allowed to | Permission codes checked inside every Server Action, page, and Route Handler (hiding buttons is only cosmetic) | `src/server/authz/*` | Static test fails the build if any action or page lacks a check |
+| Stolen or guessed password | **Second step: one-time code emailed to the manager.** A session can only be created from a verified code | `src/server/auth/otp.ts`, `auth.ts` | `tests/otp.test.ts`, `static-guards.test.ts`, `integration/otp.int.test.ts` |
+| Bots hammering the login form | Cloudflare Turnstile (fail closed), per-IP limits, optional Cloudflare WAF rules | `turnstile.ts`, `docs/05` | `turnstile-mail.test.ts` |
 | Password guessing | argon2id hashing, 5-strike escalating lockout, per-IP limiter, one generic error, equal timing for unknown users | `src/server/auth/*` | `tests/password.test.ts` |
 | Stolen or stale session | JWT cookie (httpOnly, SameSite=Lax, Secure in production), 30 min idle / 8 h absolute, `sessionVersion` revokes all sessions on password change or deactivation | `src/server/auth/*` | Manual checklist in README |
 | Cross-site scripting | Nonce-based Content-Security-Policy (no inline scripts), React escaping, no `dangerouslySetInnerHTML`/`eval` | `src/lib/csp.ts`, `src/middleware.ts` | `tests/security/csp.test.ts`, live header check, static scan |
@@ -45,12 +47,15 @@ Re-run `npm audit` after each upgrade. Remove an override once the parent packag
   sets that header, on a single instance.
 - **Styles allow `'unsafe-inline'`** because React, Tailwind and the charts emit inline style attributes. Inline styles cannot run code.
 - **JWT sessions cannot be revoked individually**; they are revoked as a group by `sessionVersion`.
-- **No two-factor authentication** in this version.
+- **The emailed code is only as strong as the mailbox.** Anyone who controls the manager's Gmail can read the code. Protect that account with its own 2-Step Verification; an authenticator app or passkey is the recommended upgrade.
+- **Email delivery is a dependency.** If Gmail/SMTP is down nobody can sign in; the server-side recovery steps are in `docs/05-two-factor-and-cloudflare.md`.
 
 ## Before going live (checklist)
 
 - [ ] `AUTH_SECRET` is a fresh random value and is not in Git.
 - [ ] The manager password has been changed from the seed value.
+- [ ] `SEED_MANAGER_EMAIL` is the manager's own Gmail, that Gmail has 2-Step Verification, and a test login delivered a code.
+- [ ] Cloudflare Turnstile (and ideally Tunnel + Access) is set up; `TRUST_CLOUDFLARE=true` only if the app is reachable solely via Cloudflare.
 - [ ] The site is served over HTTPS only; `AUTH_TRUST_HOST=true` is set behind the proxy.
 - [ ] The database is not reachable from the internet (firewall; strong password; not the dev password).
 - [ ] A backup has run, been copied off the machine, and a test restore has succeeded.

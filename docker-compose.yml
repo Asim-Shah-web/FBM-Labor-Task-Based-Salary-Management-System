@@ -15,5 +15,16 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  # Optional: Cloudflare Tunnel connector (docs/05-two-factor-and-cloudflare.md).
+  #   docker compose --profile cloudflare up -d cloudflared
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["cloudflare"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 volumes:
   fbm_pgdata:

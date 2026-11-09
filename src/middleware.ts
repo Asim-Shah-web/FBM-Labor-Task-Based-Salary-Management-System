@@ -7,7 +7,7 @@ const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   const nonce = generateNonce();
-  const csp = buildCsp(nonce, process.env.NODE_ENV !== "production");
+  const csp = buildCsp(nonce, process.env.NODE_ENV !== "production", { turnstile: !!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY });
 
   // Cheap gate only: "is there a session cookie that decodes?". Real authorization
   // (active user, session version, permissions) happens server-side in every page/action.

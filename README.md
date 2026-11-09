@@ -56,6 +56,8 @@ All modules and hardening are implemented. The remaining work is production depl
 
 - **One secure manager account** (the administrator). Mandatory login, argon2id password hashing,
   account lockout, session expiry, forced password change on first login, full audit log.
+- **Two-step login:** after the password, a 6-digit code is emailed to the manager's Gmail (10 minutes, single use,
+  5 guesses). A stolen password alone cannot open the system. Optional **Cloudflare Turnstile** bot check on the login form.
 - **Workers:** add, edit, search, filter, activate/deactivate (history is never deleted), and a full
   profile with attendance, production history, allowances, and balance summary.
 - **Tasks and rates:** per-unit and fixed-per-task pricing, effective-dated rate history. Changing a rate
@@ -196,7 +198,9 @@ npm run dev
 ```
 
 Open <http://localhost:3000> and sign in with the username and password from your `.env`
-(default username: `manager`). You will be asked to choose a new password, then sign in again.
+(default username: `manager`). A 6-digit code is then emailed to `SEED_MANAGER_EMAIL` (in development without SMTP settings it is
+printed in the terminal running `npm run dev`). Enter it to continue. On the first login you are asked to choose a new password and
+then sign in again.
 
 ## Environment variables
 
@@ -208,6 +212,11 @@ Open <http://localhost:3000> and sign in with the username and password from you
 | `SEED_MANAGER_USERNAME` | Seed only | Username of the manager account (default `manager`). |
 | `SEED_MANAGER_NAME` | Seed only | Display name (default `Manager`). |
 | `SEED_MANAGER_PASSWORD` | Seed only | Initial password. Must be changed at first login. |
+| `SEED_MANAGER_EMAIL` | Yes | The manager's Gmail. The login code is emailed here. Rerun `npm run db:seed` to change it. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` | Production | Email sending (Gmail with an App Password). Empty in development: the code is printed in the server console. See [`docs/05-two-factor-and-cloudflare.md`](docs/05-two-factor-and-cloudflare.md). |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Optional | Cloudflare Turnstile bot check on the login form (rebuild after changing the site key). |
+| `TRUST_CLOUDFLARE` | Optional | `true` only when the app is reachable solely through Cloudflare; then the real visitor IP is used. |
+| `CLOUDFLARE_TUNNEL_TOKEN`, `AUTH_URL` | Optional | Cloudflare Tunnel connector and the public site address. |
 | `SESSION_IDLE_MINUTES` | No | Sign out after this much inactivity (default 30). |
 | `SESSION_ABSOLUTE_HOURS` | No | Maximum session length regardless of activity (default 8). |
 
@@ -329,6 +338,7 @@ See [`docs/01-architecture.md`](docs/01-architecture.md) for the ER diagram and 
 ## Security
 
 - Mandatory authentication; middleware redirects visitors, and **every page and action re-checks authorization on the server**.
+- **Two-step login:** password, then a one-time code emailed to the manager. The session can only be created from a verified code (enforced in code and by a test). Optional Cloudflare Turnstile and Cloudflare Access/Tunnel; see [`docs/05-two-factor-and-cloudflare.md`](docs/05-two-factor-and-cloudflare.md).
 - Passwords hashed with **argon2id**; minimum length and common-password checks.
 - Account lockout after 5 failed attempts (escalating), plus a per-IP rate limit; one generic error message so attackers cannot
   tell whether a username exists.
@@ -338,14 +348,14 @@ See [`docs/01-architecture.md`](docs/01-architecture.md) for the ER diagram and 
 - Database-level protection: CHECK constraints and triggers make financial history append-only even against raw SQL.
 - Automated guards fail the build if any server action or page lacks a permission check, or if browser code imports server code.
 - Known trade-offs: lockout can be abused to lock the manager out for a short time; the IP limiter trusts `X-Forwarded-For` and needs a
-  reverse proxy that sets it; there is no two-factor login yet. See [`docs/02-security.md`](docs/02-security.md).
+  reverse proxy that sets it; the second factor is only as safe as the manager's mailbox (an authenticator app or passkey is the recommended upgrade). See [`docs/02-security.md`](docs/02-security.md).
 
 **Before going live:** follow the checklist in [`docs/02-security.md`](docs/02-security.md): change `AUTH_SECRET` and the manager password, serve only over HTTPS, schedule backups and copy them off the machine, and complete one test restore.
 
 ## Testing
 
 ```bash
-npm test             # 85 unit tests: money, pricing, rate history, dates, passwords, permissions, allocation engine, reports, Excel/PDF,
+npm test             # 119 unit tests (incl. the emailed-code login): money, pricing, rate history, dates, passwords, permissions, allocation engine, reports, Excel/PDF,
                      # CSP, runtime permission checks, and source-code security guards
 npm run typecheck
 ```
@@ -405,7 +415,13 @@ rm -rf prisma/migrations
 npm run db:up && npm run db:init && npm run db:seed
 ```
 
+**I did not get the login code.** Check Spam, the server log (`Email sending failed`), and the Gmail App Password setup; full list in [`docs/05-two-factor-and-cloudflare.md`](docs/05-two-factor-and-cloudflare.md).
+
 **The app shows "Something went wrong".** Note the Reference code on the page and look for the matching `"level":"error"` line in the server log.
+
+**Upgrading from the build without two-step login.** (1) Add `SEED_MANAGER_EMAIL` and the `SMTP_*` values to `.env`. (2) `npm install`.
+(3) `npm run db:migrate -- --name login_challenges` (adds one table). (4) `npm run db:seed` (stores the email). Until the email is set,
+nobody can sign in, by design.
 
 **Upgrading from the Phase 2 build.** The database schema did not change. Run `npm run db:seed` once to retire the old ADMIN and
 VIEWER roles; any old `admin` account is moved to the manager role, so delete it if you do not need it.
@@ -418,6 +434,7 @@ VIEWER roles; any old `admin` account is moved to the manager role, so delete it
 - [x] Phase 4: Salary settlements (oldest-first, partial payments, reversals), advances and recovery
 - [x] Phase 5: Dashboard analytics, reports (monthly wage, worker statement, attendance, production, outstanding, advances), print/Excel/PDF
 - [x] Phase 6: Hardening: permission guards, nonce-based CSP, audit log page, integrity checks, backups and restore, dependency audit
+- [x] Two-step login (emailed code) and Cloudflare Turnstile / Tunnel / Access guidance
 - [ ] Phase 7: Production deployment (Docker, HTTPS, scheduled backups) and PWA install
 
 ## Documentation
@@ -426,6 +443,7 @@ VIEWER roles; any old `admin` account is moved to the manager role, so delete it
   service breakdown, authentication design, database integrity rules, roadmap.
 - [`docs/02-security.md`](docs/02-security.md): threats and controls, known limitations, go-live checklist.
 - [`docs/03-operations.md`](docs/03-operations.md): backups, restore drill, integrity checks, monitoring, incident runbook.
+- [`docs/05-two-factor-and-cloudflare.md`](docs/05-two-factor-and-cloudflare.md): the emailed-code login, Gmail setup, other methods, Cloudflare Turnstile, Tunnel and Access.
 
 ## License
 

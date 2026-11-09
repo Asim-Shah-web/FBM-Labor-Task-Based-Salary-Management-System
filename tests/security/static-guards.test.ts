@@ -30,7 +30,10 @@ describe("server actions", () => {
       for (const part of parts) {
         const name = part.slice(0, part.indexOf("("));
         // app/actions/auth.ts holds the public login/logout and the session-checked password change.
-        const ok = /requirePermission\(|requireUser\(|getCurrentUser\(|signIn\(|signOut\(/.test(part);
+        // The login-step actions are public by necessity but are limited to auth.ts and rate-limited.
+        const publicLogin = rel(f) === "app/actions/auth.ts" && ["startLoginAction", "verifyLoginAction", "resendCodeAction"].includes(name);
+        if (publicLogin) { if (!/rateLimit\(/.test(part)) problems.push(`${rel(f)}: ${name} is not rate limited`); continue; }
+        const ok = /requirePermission\(|requireUser\(|getCurrentUser\(|signOut\(/.test(part);
         if (!ok) problems.push(`${rel(f)}: ${name}`);
       }
     }
@@ -45,6 +48,26 @@ describe("server actions", () => {
     expect(fin).toContain('requirePermission("advance:issue")');
     expect(fin).toContain('requirePermission("advance:void")');
     expect(read(path.join(ROOT, "app/actions/tasks.ts"))).toContain('requirePermission("rate:change")');
+  });
+});
+
+describe("two-factor login", () => {
+  const authTs = read(path.join(ROOT, "server/auth/auth.ts"));
+  it("a password alone can never create a session", () => {
+    expect(authTs).not.toMatch(/verifyPassword|checkCredentials|passwordHash/);
+    expect(authTs).toContain("consumeVerifiedChallenge");
+  });
+  it("only the verified-challenge path calls signIn", () => {
+    const users = files.filter((f) => /\bsignIn\(/.test(read(f)) && !rel(f).startsWith("server/auth/auth.ts")).map(rel);
+    expect(users).toEqual(["app/actions/auth.ts"]);
+    const act = read(path.join(ROOT, "app/actions/auth.ts"));
+    expect(act.indexOf("verifyChallenge(")).toBeGreaterThan(-1);
+    expect(act.indexOf("verifyChallenge(")).toBeLessThan(act.indexOf("signIn("));
+  });
+  it("the login code is never logged or returned to the browser", () => {
+    const otp = read(path.join(ROOT, "server/auth/otp.ts"));
+    expect(otp).not.toMatch(/return \{[^}]*\bcode\b/);
+    expect(otp).not.toMatch(/audit\([^)]*\bcode\b[^)]*\)/s);
   });
 });
 

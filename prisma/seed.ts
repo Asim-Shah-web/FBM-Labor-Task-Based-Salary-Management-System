@@ -56,16 +56,29 @@ async function retireLegacyRoles() {
   }
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 async function ensureManager() {
   const username = (process.env.SEED_MANAGER_USERNAME ?? "manager").trim().toLowerCase();
   const password = process.env.SEED_MANAGER_PASSWORD ?? "";
   const fullName = process.env.SEED_MANAGER_NAME?.trim() || "Manager";
+  // Login codes are emailed here. Use the manager's own Gmail address.
+  const email = (process.env.SEED_MANAGER_EMAIL ?? "").trim().toLowerCase();
+  if (email && !EMAIL_RE.test(email)) throw new Error("SEED_MANAGER_EMAIL is not a valid email address.");
 
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) {
-    console.log(`  manager "${username}" already exists: left unchanged`);
+    console.log(`  manager "${username}" already exists: password left unchanged`);
+    if (email && existing.email !== email) {
+      await prisma.user.update({ where: { id: existing.id }, data: { email, sessionVersion: { increment: 1 } } });
+      await prisma.auditLog.create({ data: { userId: existing.id, action: "user.email_change", entityType: "User", entityId: existing.id, before: { email: existing.email }, after: { email }, meta: { via: "seed script" } } });
+      console.log(`  login-code email set to ${email} (existing sessions were signed out)`);
+    } else if (!existing.email) {
+      console.warn("  WARNING: this account has no email, so nobody can sign in. Set SEED_MANAGER_EMAIL and run the seed again.");
+    }
     return;
   }
+  if (!email) throw new Error("SEED_MANAGER_EMAIL is required: the login code is emailed to this address (use the manager's Gmail).");
   const policy = checkPasswordPolicy(password, username);
   if (!policy.ok) throw new Error(`SEED_MANAGER_PASSWORD rejected: ${policy.message}`);
   if (process.env.NODE_ENV === "production" && /changeme/i.test(password))
@@ -75,13 +88,14 @@ async function ensureManager() {
   await prisma.user.create({
     data: {
       username,
+      email,
       fullName,
       passwordHash: await hashPassword(password),
       mustChangePassword: true, // forced change at first login
       roles: { create: { roleId: role.id } },
     },
   });
-  console.log(`  created manager "${username}" (must change password at first login)`);
+  console.log(`  created manager "${username}" with login-code email ${email} (must change password at first login)`);
 }
 
 async function main() {

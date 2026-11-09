@@ -10,14 +10,16 @@ export function generateNonce(): string {
   return btoa(s);
 }
 
-export function buildCsp(nonce: string, isDev: boolean): string {
+export function buildCsp(nonce: string, isDev: boolean, opts: { turnstile?: boolean } = {}): string {
+  const cf = opts.turnstile ? " https://challenges.cloudflare.com" : "";
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}${cf}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
-    "connect-src 'self'",
+    `connect-src 'self'${cf}`,
+    ...(opts.turnstile ? ["frame-src https://challenges.cloudflare.com"] : []),
     "object-src 'none'",
     "frame-ancestors 'none'",
     "base-uri 'self'",

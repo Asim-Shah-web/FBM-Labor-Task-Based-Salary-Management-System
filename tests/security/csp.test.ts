@@ -24,6 +24,13 @@ describe("Content-Security-Policy", () => {
     for (const d of ["frame-ancestors 'none'", "object-src 'none'", "form-action 'self'", "base-uri 'self'", "connect-src 'self'", "default-src 'self'"])
       expect(prod).toContain(d);
   });
+  it("allows Cloudflare Turnstile only when enabled", () => {
+    expect(prod).not.toContain("challenges.cloudflare.com");
+    const withTs = buildCsp(nonce, false, { turnstile: true });
+    expect(withTs).toContain("script-src 'self' 'nonce-" + nonce + "' 'strict-dynamic' https://challenges.cloudflare.com");
+    expect(withTs).toContain("frame-src https://challenges.cloudflare.com");
+    expect(withTs).toContain("connect-src 'self' https://challenges.cloudflare.com");
+  });
   it("upgrades insecure requests in production only", () => {
     expect(prod).toContain("upgrade-insecure-requests");
     expect(dev).not.toContain("upgrade-insecure-requests");
